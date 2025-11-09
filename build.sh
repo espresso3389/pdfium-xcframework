@@ -582,7 +582,7 @@ main() {
     ZIP_NAME="PDFium-chromium-${CHROMIUM_VER}-${BUILD_ID}.xcframework.zip"
 
     cd "${OUTPUT_DIR}"
-    zip -r "${ZIP_NAME}" "${XCFRAMEWORK_NAME}"
+    zip -r --symlinks "${ZIP_NAME}" "${XCFRAMEWORK_NAME}"
     CHECKSUM=$(shasum -a 256 "${ZIP_NAME}" | awk '{print $1}')
     echo "$CHECKSUM  ${ZIP_NAME}" > "${ZIP_NAME}.sha256"
 
