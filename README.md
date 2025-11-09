@@ -15,60 +15,7 @@ Pre-built PDFium XCFramework for iOS, macOS, and Mac Catalyst.
 
 ## Installation
 
-### Swift Package Manager (Recommended)
-
-1. Download `Package.swift` from the [latest release](https://github.com/OWNER/REPO/releases)
-2. Add it to your project root
-3. The Package.swift contains the correct URL and checksum for the XCFramework
-
-Or manually add to your existing `Package.swift`:
-
-```swift
-dependencies: [
-    .binaryTarget(
-        name: "PDFium",
-        url: "https://github.com/OWNER/REPO/releases/download/vVERSION/PDFium.xcframework.zip",
-        checksum: "CHECKSUM_FROM_RELEASE"
-    )
-]
-```
-
-### CocoaPods
-
-1. Download `PDFium.podspec` from the [latest release](https://github.com/OWNER/REPO/releases)
-2. Add to your `Podfile`:
-
-```ruby
-pod 'PDFium', :podspec => 'path/to/PDFium.podspec'
-```
-
-3. Run:
-
-```bash
-pod install
-```
-
-### Manual Installation
-
-1. Download the latest `PDFium.xcframework.zip` from [Releases](https://github.com/OWNER/REPO/releases)
-2. Verify the checksum:
-   ```bash
-   shasum -a 256 -c PDFium.xcframework.zip.sha256
-   ```
-3. Unzip the archive
-4. Drag `PDFium.xcframework` into your Xcode project
-5. In your target's General tab, add it to "Frameworks, Libraries, and Embedded Content"
-
-## Usage
-
-Import PDFium in your Swift code:
-
-```swift
-import PDFium
-
-// Use PDFium APIs
-// See https://pdfium.googlesource.com/pdfium/ for documentation
-```
+See [latest release](https://github.com/espresso3389/pdfium-xcframework/releases/latest).
 
 ## Building from Source
 
@@ -82,7 +29,7 @@ import PDFium
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/OWNER/REPO.git
+   git clone https://github.com/espresso3389/pdfium-xcframework.git
    cd pdfium-xcframework
    ```
 
@@ -110,71 +57,3 @@ export OUTPUT_DIR="./output"
 
 ./build.sh
 ```
-
-## GitHub Actions Workflow
-
-This repository includes a GitHub Actions workflow that automatically builds and releases the XCFramework.
-
-### Automatic Release (on tag push)
-
-```bash
-git tag v144.0.7506.0
-git push origin v144.0.7506.0
-```
-
-The workflow will:
-1. Build the XCFramework
-2. Create a zip archive with SHA256 checksum
-3. **Auto-generate Package.swift and PDFium.podspec** with correct URLs and checksums
-4. Create a GitHub release with all artifacts (zip, checksum, Package.swift, PDFium.podspec)
-
-### Manual Build
-
-You can also trigger the workflow manually from the Actions tab with custom version and release tag parameters.
-
-### Local Package File Generation
-
-After building locally, you can generate Package.swift and PDFium.podspec:
-
-```bash
-# Build the XCFramework
-./build.sh
-
-# Generate package files
-export GITHUB_REPO="username/repository"
-./generate-package-files.sh
-```
-
-## Verification
-
-After downloading a release, verify the integrity:
-
-```bash
-# Download both the zip and checksum files
-curl -LO https://github.com/OWNER/REPO/releases/download/vVERSION/PDFium.xcframework.zip
-curl -LO https://github.com/OWNER/REPO/releases/download/vVERSION/PDFium.xcframework.zip.sha256
-
-# Verify checksum
-shasum -a 256 -c PDFium.xcframework.zip.sha256
-```
-
-Expected output: `PDFium.xcframework.zip: OK`
-
-## Source
-
-This project packages pre-built PDFium binaries from [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) into an XCFramework format for easy integration with iOS and macOS projects.
-
-## License
-
-PDFium is licensed under the BSD 3-Clause License. See the [PDFium license](https://pdfium.googlesource.com/pdfium/+/refs/heads/main/LICENSE) for details.
-
-This packaging script is provided as-is for convenience.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Support
-
-- PDFium Documentation: https://pdfium.googlesource.com/pdfium/
-- Issues: https://github.com/OWNER/REPO/issues
