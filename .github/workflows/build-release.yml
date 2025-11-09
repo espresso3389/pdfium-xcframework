@@ -18,11 +18,6 @@ on:
         description: 'Chromium version (e.g., 7506) - only used if build_mode is "specific"'
         required: false
         default: '7506'
-      create_release:
-        description: 'Create GitHub release'
-        required: true
-        default: true
-        type: boolean
 
 permissions:
   contents: write
@@ -179,10 +174,10 @@ jobs:
           echo '```' >> release_body.md
 
       - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', env.VERSION) }}
+          tag_name: ${{ github.ref_name }}
           name: PDFium ${{ env.VERSION }} (Build ${{ env.BUILD_ID }})
           files: |
             output/${{ env.ZIP_NAME }}
@@ -196,14 +191,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Summary
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release != 'true'
+        if: github.event_name == 'workflow_dispatch'
         run: |
           echo "✅ Build completed successfully!"
           echo "📦 Built version: ${{ env.VERSION }}"
           echo "📦 Release tag: ${{ env.RELEASE_TAG }}"
+          echo "📦 Build ID: ${{ env.BUILD_ID }}"
           echo ""
           echo "XCFramework and package files are available as workflow artifacts."
           echo ""
-          echo "To create a release manually:"
-          echo "1. Re-run this workflow with 'Create GitHub release' enabled"
-          echo "2. Or create and push a tag: git tag v${{ env.VERSION }} && git push origin v${{ env.VERSION }}"
+          echo "To create a GitHub release:"
+          echo "  git tag v${{ env.VERSION }}"
+          echo "  git push origin v${{ env.VERSION }}"
+          echo ""
+          echo "The tag push will automatically trigger a release build."
