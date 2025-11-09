@@ -1,14 +1,6 @@
 #!/bin/bash
 set -e
 
-# Configuration
-VERSION="${VERSION:-144.0.7506.0}"
-RELEASE_TAG="chromium/7506"
-BASE_URL="https://github.com/bblanchon/pdfium-binaries/releases/download/${RELEASE_TAG}"
-WORK_DIR="${WORK_DIR:-./build}"
-OUTPUT_DIR="${OUTPUT_DIR:-./output}"
-XCFRAMEWORK_NAME="PDFium.xcframework"
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -26,6 +18,104 @@ log_error() {
 log_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1" >&2
 }
+
+# Usage function
+usage() {
+    cat << EOF
+Usage: $0 [CHROMIUM_VERSION|latest]
+
+Build PDFium XCFramework for iOS, macOS, and Mac Catalyst.
+
+Arguments:
+    CHROMIUM_VERSION    The Chromium version number (e.g., 7506)
+    latest              Automatically fetch and build the latest version
+
+    If not provided, uses VERSION and RELEASE_TAG environment variables
+    or shows this usage message.
+
+Examples:
+    $0 latest           Build the latest available PDFium version
+    $0 7506             Build PDFium from chromium/7506
+    $0 7595             Build PDFium from chromium/7595
+    VERSION=144.0.7506.0 RELEASE_TAG=chromium/7506 $0
+                        Build using environment variables
+
+Environment Variables:
+    VERSION             Full PDFium version (e.g., 144.0.7506.0)
+    RELEASE_TAG         Release tag from pdfium-binaries (e.g., chromium/7506)
+    WORK_DIR            Build directory (default: ./build)
+    OUTPUT_DIR          Output directory (default: ./output)
+
+EOF
+    exit 1
+}
+
+# Fetch latest release tag from pdfium-binaries repository
+fetch_latest_release() {
+    log_info "Fetching latest release from pdfium-binaries..."
+
+    # Get the latest release tag from GitHub API
+    local latest_tag
+    latest_tag=$(curl -s https://api.github.com/repos/bblanchon/pdfium-binaries/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+
+    if [ -z "$latest_tag" ]; then
+        log_error "Failed to fetch latest release tag"
+        exit 1
+    fi
+
+    log_info "Latest release tag: ${latest_tag}"
+
+    # Extract chromium version from tag (e.g., "chromium/7506" -> "7506")
+    local chromium_version
+    chromium_version=$(echo "$latest_tag" | sed 's/chromium\///')
+
+    if [ -z "$chromium_version" ]; then
+        log_error "Failed to parse chromium version from tag: ${latest_tag}"
+        exit 1
+    fi
+
+    echo "$chromium_version|$latest_tag"
+}
+
+# Parse command-line arguments
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    usage
+fi
+
+# Determine version from argument or environment
+if [ -n "$1" ]; then
+    if [ "$1" = "latest" ]; then
+        # Fetch latest version
+        latest_info=$(fetch_latest_release)
+        IFS='|' read -r CHROMIUM_VERSION RELEASE_TAG <<< "$latest_info"
+        VERSION="${VERSION:-144.0.${CHROMIUM_VERSION}.0}"
+    else
+        # Chromium version provided as argument
+        CHROMIUM_VERSION="$1"
+
+        # Derive VERSION and RELEASE_TAG from chromium version
+        # Note: The major.minor.build format may vary, so we use a sensible default
+        # Users can override with environment variables if needed
+        VERSION="${VERSION:-144.0.${CHROMIUM_VERSION}.0}"
+        RELEASE_TAG="chromium/${CHROMIUM_VERSION}"
+    fi
+else
+    # Check if environment variables are set
+    if [ -z "$VERSION" ] && [ -z "$RELEASE_TAG" ]; then
+        # No parameters and no environment variables - show usage
+        usage
+    fi
+
+    # Use environment variables or defaults
+    VERSION="${VERSION:-144.0.7506.0}"
+    RELEASE_TAG="${RELEASE_TAG:-chromium/7506}"
+fi
+
+# Configuration
+BASE_URL="https://github.com/bblanchon/pdfium-binaries/releases/download/${RELEASE_TAG}"
+WORK_DIR="${WORK_DIR:-./build}"
+OUTPUT_DIR="${OUTPUT_DIR:-./output}"
+XCFRAMEWORK_NAME="PDFium.xcframework"
 
 # Cleanup function
 cleanup() {
@@ -77,8 +167,19 @@ create_framework() {
     # Copy dylib as the framework binary
     cp "$dylib_path" "${framework_path}/Versions/A/${binary_name}"
 
-    # Note: Headers will be added at the XCFramework level to avoid duplication
-    # We'll extract them separately and add with -headers flag to xcodebuild
+    # Copy headers - they're in the include directory at the extraction root
+    # The dylib is typically in lib/libpdfium.dylib, headers are in include/
+    # Note: Headers must be in each framework (can't be at XCFramework level for frameworks)
+    local extract_root=$(dirname "$(dirname "$dylib_path")")
+    local header_dir="${extract_root}/include"
+    if [ -d "$header_dir" ]; then
+        cp -R "${header_dir}"/* "${framework_path}/Versions/A/Headers/"
+
+        # Remove unwanted files (backup files, temp files, etc.)
+        find "${framework_path}/Versions/A/Headers" -type f \( -name "*.orig" -o -name "*.bak" -o -name "*~" -o -name ".DS_Store" \) -delete
+    else
+        log_warning "Headers not found at ${header_dir}"
+    fi
 
     # Create symlinks
     cd "${framework_path}/Versions" && ln -sf "A" "Current" && cd - > /dev/null
@@ -119,6 +220,110 @@ create_framework() {
 </dict>
 </plist>
 EOF
+}
+
+# Verify XCFramework integrity
+verify_xcframework() {
+    local xcframework_path=$1
+
+    log_info "Verifying XCFramework integrity..."
+
+    if [ ! -d "$xcframework_path" ]; then
+        log_error "XCFramework not found at: $xcframework_path"
+        return 1
+    fi
+
+    # Check Info.plist exists
+    if [ ! -f "${xcframework_path}/Info.plist" ]; then
+        log_error "Missing Info.plist in XCFramework"
+        return 1
+    fi
+
+    # Verify structure
+    log_info "Checking XCFramework structure..."
+
+    # Count available libraries
+    local lib_count=$(find "$xcframework_path" -name "*.framework" -depth 2 | wc -l | tr -d ' ')
+    log_info "Found ${lib_count} framework(s) in XCFramework"
+
+    # Verify each framework
+    local error_count=0
+    for framework in "${xcframework_path}"/*/*.framework; do
+        if [ -d "$framework" ]; then
+            local framework_name=$(basename "$framework")
+            log_info "Verifying framework: ${framework_name}"
+
+            # Check for binary
+            local binary_name=$(basename "$framework" .framework)
+            local binary_path="${framework}/${binary_name}"
+
+            if [ ! -f "$binary_path" ] && [ ! -L "$binary_path" ]; then
+                log_error "  ✗ Binary not found: ${binary_name}"
+                error_count=$((error_count + 1))
+                continue
+            fi
+
+            # Resolve symlink if needed (macOS compatible)
+            if [ -L "$binary_path" ]; then
+                # Follow symlink to actual file
+                local target
+                target=$(readlink "$binary_path")
+                if [[ "$target" = /* ]]; then
+                    binary_path="$target"
+                else
+                    binary_path="$(dirname "$binary_path")/$target"
+                fi
+            fi
+
+            # Verify it's a valid Mach-O file
+            if file "$binary_path" | grep -q "Mach-O"; then
+                log_info "  ✓ Valid Mach-O binary"
+
+                # Show architectures
+                local archs=$(lipo -info "$binary_path" 2>/dev/null | sed 's/.*: //')
+                log_info "  ✓ Architectures: ${archs}"
+            else
+                log_error "  ✗ Invalid binary format"
+                error_count=$((error_count + 1))
+            fi
+
+            # Check headers (follow symlinks)
+            local headers_path="${framework}/Headers"
+            if [ -L "$headers_path" ]; then
+                # It's a symlink, resolve it
+                local target
+                target=$(readlink "$headers_path")
+                if [[ "$target" = /* ]]; then
+                    headers_path="$target"
+                else
+                    headers_path="$(dirname "$headers_path")/$target"
+                fi
+            fi
+
+            if [ -d "$headers_path" ]; then
+                local header_count=$(find "$headers_path" -name "*.h" 2>/dev/null | wc -l | tr -d ' ')
+                log_info "  ✓ Headers: ${header_count} files"
+            else
+                log_warning "  ⚠ No headers directory found"
+            fi
+
+            # Check Info.plist
+            if [ -f "${framework}/Resources/Info.plist" ] || [ -f "${framework}/Info.plist" ]; then
+                log_info "  ✓ Info.plist found"
+            else
+                log_error "  ✗ Info.plist missing"
+                error_count=$((error_count + 1))
+            fi
+        fi
+    done
+
+    if [ $error_count -eq 0 ]; then
+        log_info "✅ XCFramework verification passed!"
+        return 0
+    else
+        log_error "❌ XCFramework verification failed with ${error_count} error(s)"
+        return 1
+    fi
 }
 
 # Process architecture in parallel
@@ -272,31 +477,6 @@ main() {
     # Add single-architecture framework (iOS device)
     framework_paths+=("${WORK_DIR}/frameworks/PDFium-iPhoneOS-arm64.framework")
 
-    # Extract headers once for the XCFramework
-    log_info "Extracting headers for XCFramework..."
-    HEADERS_DIR="${WORK_DIR}/headers"
-    mkdir -p "$HEADERS_DIR"
-
-    # Find any framework path file to get headers from
-    first_config="${CONFIGS[0]}"
-    IFS='|' read -r config tgz_file _ _ _ <<< "$first_config"
-
-    if [ -f "${WORK_DIR}/.framework_path_${config}" ]; then
-        first_framework=$(cat "${WORK_DIR}/.framework_path_${config}")
-        # Get the extraction directory from the framework path
-        first_extract_dir=$(echo "$first_framework" | sed "s|${WORK_DIR}/frameworks/PDFium-\([^.]*\)\.framework|${WORK_DIR}/extracted/\1|")
-
-        # Find the dylib to locate headers
-        first_dylib=$(find "${first_extract_dir}" \( -name "*.dylib" -o -name "*.a" \) | head -n 1)
-        if [ -n "$first_dylib" ]; then
-            extract_root=$(dirname "$(dirname "$first_dylib")")
-            if [ -d "${extract_root}/include" ]; then
-                cp -R "${extract_root}/include"/* "$HEADERS_DIR/"
-                log_info "Headers extracted to ${HEADERS_DIR}"
-            fi
-        fi
-    fi
-
     # Create xcframework
     log_info "Creating XCFramework..."
     xcodebuild_args=(-create-xcframework)
@@ -304,11 +484,6 @@ main() {
     for framework in "${framework_paths[@]}"; do
         xcodebuild_args+=(-framework "$framework")
     done
-
-    # Add headers at XCFramework level if they exist
-    if [ -d "$HEADERS_DIR" ] && [ "$(ls -A "$HEADERS_DIR")" ]; then
-        xcodebuild_args+=(-headers "$HEADERS_DIR")
-    fi
 
     xcodebuild_args+=(-output "${OUTPUT_DIR}/${XCFRAMEWORK_NAME}")
     
@@ -318,12 +493,49 @@ main() {
     fi
     
     xcodebuild "${xcodebuild_args[@]}"
-    
+
     log_info "✅ XCFramework created successfully at ${OUTPUT_DIR}/${XCFRAMEWORK_NAME}"
-    
+
+    # Verify the XCFramework
+    verify_xcframework "${OUTPUT_DIR}/${XCFRAMEWORK_NAME}"
+
+    # Create zip and checksum for distribution
+    log_info "Creating distribution package..."
+
+    # Generate build ID from timestamp (format: YYYYMMDD-HHMMSS)
+    BUILD_ID="${BUILD_ID:-$(date -u +%Y%m%d-%H%M%S)}"
+
+    # Extract chromium version from RELEASE_TAG (e.g., "chromium/7506" -> "7506")
+    CHROMIUM_VER=$(echo "$RELEASE_TAG" | sed 's/chromium\///')
+
+    # Create zip name with chromium version and build ID
+    # Format: PDFium-chromium-7506-20250209-143052.xcframework.zip
+    ZIP_NAME="PDFium-chromium-${CHROMIUM_VER}-${BUILD_ID}.xcframework.zip"
+
+    cd "${OUTPUT_DIR}"
+    zip -r "${ZIP_NAME}" "${XCFRAMEWORK_NAME}"
+    CHECKSUM=$(shasum -a 256 "${ZIP_NAME}" | awk '{print $1}')
+    echo "$CHECKSUM  ${ZIP_NAME}" > "${ZIP_NAME}.sha256"
+
+    # Also create a symlink without build ID for convenience
+    ln -sf "${ZIP_NAME}" "${XCFRAMEWORK_NAME}.zip"
+    ln -sf "${ZIP_NAME}.sha256" "${XCFRAMEWORK_NAME}.zip.sha256"
+    cd - > /dev/null
+
+    log_info "Build ID: ${BUILD_ID}"
+    log_info "Checksum: ${CHECKSUM}"
+
+    # Save version information for CI/CD workflows (before cleanup)
+    cat > "${OUTPUT_DIR}/.version_info" <<EOF
+VERSION=${VERSION}
+RELEASE_TAG=${RELEASE_TAG}
+BUILD_ID=${BUILD_ID}
+ZIP_NAME=${ZIP_NAME}
+EOF
+
     # Cleanup
     cleanup
-    
+
     log_info "Build complete!"
 }
 

@@ -1,0 +1,209 @@
+name: Build and Release PDFium XCFramework
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: 'Build mode'
+        required: true
+        default: 'latest'
+        type: choice
+        options:
+          - latest
+          - specific
+      chromium_version:
+        description: 'Chromium version (e.g., 7506) - only used if build_mode is "specific"'
+        required: false
+        default: '7506'
+      create_release:
+        description: 'Create GitHub release'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build XCFramework
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build XCFramework
+        run: |
+          chmod +x build.sh
+
+          # Determine build arguments based on trigger type
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # Tag-based build: extract version from tag
+            TAG_VERSION="${{ github.ref_name }}"
+            TAG_VERSION="${TAG_VERSION#v}"  # Remove 'v' prefix if present
+
+            # Extract chromium version from tag (e.g., "144.0.7506.0" -> "7506")
+            CHROMIUM_VERSION=$(echo "$TAG_VERSION" | cut -d'.' -f3)
+
+            echo "Building from tag with chromium version: ${CHROMIUM_VERSION}"
+            ./build.sh "${CHROMIUM_VERSION}"
+          elif [ "${{ github.event.inputs.build_mode }}" = "latest" ]; then
+            # Workflow dispatch with latest
+            echo "Building latest PDFium version..."
+            ./build.sh latest
+          else
+            # Workflow dispatch with specific version
+            echo "Building chromium version: ${{ github.event.inputs.chromium_version }}"
+            ./build.sh "${{ github.event.inputs.chromium_version }}"
+          fi
+
+          # Extract VERSION and RELEASE_TAG from build output for later steps
+          if [ -f "output/.version_info" ]; then
+            source output/.version_info
+            echo "VERSION=${VERSION}" >> $GITHUB_ENV
+            echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
+            echo "BUILD_ID=${BUILD_ID}" >> $GITHUB_ENV
+            echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
+            echo "Built version: ${VERSION}"
+            echo "Release tag: ${RELEASE_TAG}"
+            echo "Build ID: ${BUILD_ID}"
+          else
+            echo "Error: Version info file not found"
+            exit 1
+          fi
+
+      - name: Create package files
+        run: |
+          export VERSION="${{ env.VERSION }}"
+          export GITHUB_REPO="${{ github.repository }}"
+          chmod +x generate-package-files.sh
+          ./generate-package-files.sh
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDFium-XCFramework-${{ env.BUILD_ID }}
+          path: |
+            output/PDFium-*.xcframework.zip
+            output/PDFium-*.xcframework.zip.sha256
+            output/PDFium.xcframework.zip
+            output/PDFium.xcframework.zip.sha256
+            Package.swift
+            PDFium.podspec
+          retention-days: 7
+
+      - name: Prepare Release Body
+        id: release_body
+        run: |
+          # Read the checksum from the build ID file
+          CHECKSUM=$(cat "output/${{ env.ZIP_NAME }}.sha256")
+
+          # Extract binary target from Package.swift
+          PACKAGE_FRAGMENT=$(sed -n '/\.binaryTarget(/,/)/p' Package.swift)
+
+          # Extract pod source from PDFium.podspec
+          POD_SOURCE=$(grep -A 2 's\.source' PDFium.podspec | grep -E '(http|sha256)' | sed 's/^[[:space:]]*//')
+
+          # Create release body
+          cat > release_body.md <<'EOF'
+          ## PDFium XCFramework Release
+
+          **Version**: ${{ env.VERSION }}
+          **Build ID**: ${{ env.BUILD_ID }}
+
+          ### Source Information
+
+          This XCFramework is built from pre-compiled PDFium binaries provided by [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries).
+
+          - **Upstream Release**: [${{ env.RELEASE_TAG }}](https://github.com/bblanchon/pdfium-binaries/releases/tag/${{ env.RELEASE_TAG }})
+          - **PDFium Source**: [googlesource.com/pdfium](https://pdfium.googlesource.com/pdfium/)
+          - **PDFium Documentation**: [pdfium.googlesource.com/pdfium/+/refs/heads/main/README.md](https://pdfium.googlesource.com/pdfium/+/refs/heads/main/README.md)
+
+          ### Platforms
+          - iOS Device (arm64)
+          - iOS Simulator (arm64, x86_64)
+          - macOS (arm64, x86_64)
+          - Mac Catalyst (arm64, x86_64)
+
+          ### Integration
+
+          #### Swift Package Manager
+
+          Download `Package.swift` from this release and add it to your repository, or add the binary target to your `Package.swift`:
+
+          ```swift
+          EOF
+          echo "$PACKAGE_FRAGMENT" >> release_body.md
+          cat >> release_body.md <<'EOF'
+          ```
+
+          #### CocoaPods
+
+          Download `PDFium.podspec` from this release and add to your `Podfile`:
+
+          ```ruby
+          pod 'PDFium', :podspec => 'path/to/PDFium.podspec'
+          ```
+
+          Or reference it directly:
+
+          ```ruby
+          pod 'PDFium', :podspec => 'https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/PDFium.podspec'
+          ```
+
+          #### Manual Installation
+
+          1. Download `PDFium.xcframework.zip`
+          2. Verify checksum: `shasum -a 256 -c PDFium.xcframework.zip.sha256`
+          3. Unzip and drag `PDFium.xcframework` into your Xcode project
+          4. In your target's General tab, add to "Frameworks, Libraries, and Embedded Content"
+
+          ### Files
+
+          - **${{ env.ZIP_NAME }}** - The XCFramework binary (with build ID)
+          - **Package.swift** - Swift Package Manager configuration
+          - **PDFium.podspec** - CocoaPods specification
+          - **${{ env.ZIP_NAME }}.sha256** - SHA256 checksum for verification
+
+          > **Note**: The build ID in the filename helps identify builds of the same version made on different dates.
+
+          ### Checksum
+
+          ```
+          EOF
+          echo "$CHECKSUM" >> release_body.md
+          echo '```' >> release_body.md
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', env.VERSION) }}
+          name: PDFium ${{ env.VERSION }} (Build ${{ env.BUILD_ID }})
+          files: |
+            output/${{ env.ZIP_NAME }}
+            output/${{ env.ZIP_NAME }}.sha256
+            Package.swift
+            PDFium.podspec
+          body_path: release_body.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Summary
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release != 'true'
+        run: |
+          echo "✅ Build completed successfully!"
+          echo "📦 Built version: ${{ env.VERSION }}"
+          echo "📦 Release tag: ${{ env.RELEASE_TAG }}"
+          echo ""
+          echo "XCFramework and package files are available as workflow artifacts."
+          echo ""
+          echo "To create a release manually:"
+          echo "1. Re-run this workflow with 'Create GitHub release' enabled"
+          echo "2. Or create and push a tag: git tag v${{ env.VERSION }} && git push origin v${{ env.VERSION }}"
