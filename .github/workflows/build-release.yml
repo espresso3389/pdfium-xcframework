@@ -173,11 +173,20 @@ jobs:
           echo "$CHECKSUM" >> release_body.md
           echo '```' >> release_body.md
 
+      - name: Set release tag
+        id: set_tag
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag_name=v${{ env.VERSION }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', env.VERSION) }}
+          tag_name: ${{ steps.set_tag.outputs.tag_name }}
           name: PDFium ${{ env.VERSION }} (Build ${{ env.BUILD_ID }})
           files: |
             output/${{ env.ZIP_NAME }}
