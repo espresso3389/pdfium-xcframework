@@ -174,9 +174,13 @@ create_framework() {
         # Copy dylib as the framework binary (binary name = framework name)
         cp "$dylib_path" "${framework_path}/${binary_name}"
 
-        # Fix install name for iOS framework (use short path that fits in header)
+        # Fix install name for iOS framework
         chmod +w "${framework_path}/${binary_name}"
-        install_name_tool -id "@rpath/${binary_name}" "${framework_path}/${binary_name}"
+        # Try full path first, fall back to short path if header space is insufficient
+        if ! install_name_tool -id "@rpath/${framework_name}.framework/${binary_name}" "${framework_path}/${binary_name}" 2>/dev/null; then
+            log_warning "Full path doesn't fit, using short path @rpath/${binary_name}"
+            install_name_tool -id "@rpath/${binary_name}" "${framework_path}/${binary_name}"
+        fi
     else
         # macOS uses deep bundle structure with Versions
         mkdir -p "${framework_path}/Versions/A/Headers"
@@ -185,9 +189,13 @@ create_framework() {
         # Copy dylib as the framework binary
         cp "$dylib_path" "${framework_path}/Versions/A/${binary_name}"
 
-        # Fix install name for macOS framework (use short path that fits in header)
+        # Fix install name for macOS framework
         chmod +w "${framework_path}/Versions/A/${binary_name}"
-        install_name_tool -id "@rpath/${binary_name}" "${framework_path}/Versions/A/${binary_name}"
+        # Try full path first, fall back to short path if header space is insufficient
+        if ! install_name_tool -id "@rpath/${framework_name}.framework/${binary_name}" "${framework_path}/Versions/A/${binary_name}" 2>/dev/null; then
+            log_warning "Full path doesn't fit, using short path @rpath/${binary_name}"
+            install_name_tool -id "@rpath/${binary_name}" "${framework_path}/Versions/A/${binary_name}"
+        fi
     fi
 
     # Copy headers - they're in the include directory at the extraction root
@@ -509,9 +517,13 @@ main() {
                 "${framework2_path}/${binary_name}" \
                 -output "${fat_path}/${binary_name}"
 
-            # Fix install name for iOS fat framework (short path)
+            # Fix install name for iOS fat framework
             chmod +w "${fat_path}/${binary_name}"
-            install_name_tool -id "@rpath/${binary_name}" "${fat_path}/${binary_name}"
+            # Try full path first, fall back to short path if header space is insufficient
+            if ! install_name_tool -id "@rpath/PDFium.framework/${binary_name}" "${fat_path}/${binary_name}" 2>/dev/null; then
+                log_warning "Full path doesn't fit, using short path @rpath/${binary_name}"
+                install_name_tool -id "@rpath/${binary_name}" "${fat_path}/${binary_name}"
+            fi
         else
             # macOS deep bundle - binary is in Versions/A
             lipo -create \
@@ -519,9 +531,13 @@ main() {
                 "${framework2_path}/Versions/A/${binary_name}" \
                 -output "${fat_path}/Versions/A/${binary_name}"
 
-            # Fix install name for macOS fat framework (short path)
+            # Fix install name for macOS fat framework
             chmod +w "${fat_path}/Versions/A/${binary_name}"
-            install_name_tool -id "@rpath/${binary_name}" "${fat_path}/Versions/A/${binary_name}"
+            # Try full path first, fall back to short path if header space is insufficient
+            if ! install_name_tool -id "@rpath/PDFium.framework/${binary_name}" "${fat_path}/Versions/A/${binary_name}" 2>/dev/null; then
+                log_warning "Full path doesn't fit, using short path @rpath/${binary_name}"
+                install_name_tool -id "@rpath/${binary_name}" "${fat_path}/Versions/A/${binary_name}"
+            fi
         fi
 
         framework_paths+=("$fat_path")
