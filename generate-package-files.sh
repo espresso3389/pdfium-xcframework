@@ -105,7 +105,7 @@ Pod::Spec.new do |s|
   DESC
 
   s.homepage         = 'https://github.com/${GITHUB_REPO}'
-  s.license          = { :type => 'BSD-3-Clause', :file => 'LICENSE' }
+  s.license          = { :type => 'MIT', :file => 'LICENSE' }
   s.author           = { 'PDFium XCFramework' => 'https://github.com/${GITHUB_REPO}' }
   s.source           = {
     :http => '${RELEASE_URL}',
