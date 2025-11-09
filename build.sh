@@ -173,6 +173,10 @@ create_framework() {
 
         # Copy dylib as the framework binary (binary name = framework name)
         cp "$dylib_path" "${framework_path}/${binary_name}"
+
+        # Fix install name for iOS framework (use short path that fits in header)
+        chmod +w "${framework_path}/${binary_name}"
+        install_name_tool -id "@rpath/${binary_name}" "${framework_path}/${binary_name}"
     else
         # macOS uses deep bundle structure with Versions
         mkdir -p "${framework_path}/Versions/A/Headers"
@@ -180,6 +184,10 @@ create_framework() {
 
         # Copy dylib as the framework binary
         cp "$dylib_path" "${framework_path}/Versions/A/${binary_name}"
+
+        # Fix install name for macOS framework (use short path that fits in header)
+        chmod +w "${framework_path}/Versions/A/${binary_name}"
+        install_name_tool -id "@rpath/${binary_name}" "${framework_path}/Versions/A/${binary_name}"
     fi
 
     # Copy headers - they're in the include directory at the extraction root
@@ -500,12 +508,20 @@ main() {
                 "${framework1_path}/${binary_name}" \
                 "${framework2_path}/${binary_name}" \
                 -output "${fat_path}/${binary_name}"
+
+            # Fix install name for iOS fat framework (short path)
+            chmod +w "${fat_path}/${binary_name}"
+            install_name_tool -id "@rpath/${binary_name}" "${fat_path}/${binary_name}"
         else
             # macOS deep bundle - binary is in Versions/A
             lipo -create \
                 "${framework1_path}/Versions/A/${binary_name}" \
                 "${framework2_path}/Versions/A/${binary_name}" \
                 -output "${fat_path}/Versions/A/${binary_name}"
+
+            # Fix install name for macOS fat framework (short path)
+            chmod +w "${fat_path}/Versions/A/${binary_name}"
+            install_name_tool -id "@rpath/${binary_name}" "${fat_path}/Versions/A/${binary_name}"
         fi
 
         framework_paths+=("$fat_path")
