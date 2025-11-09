@@ -160,12 +160,27 @@ create_framework() {
     local framework_name=$(basename "$framework_path" .framework)
     local binary_name="${framework_name}"
 
-    # Create framework structure
-    mkdir -p "${framework_path}/Versions/A/Headers"
-    mkdir -p "${framework_path}/Versions/A/Resources"
+    # Determine if this is an iOS framework (use shallow bundle) or macOS (use deep bundle)
+    local is_ios=false
+    if [ "$platform" = "iPhoneOS" ] || [ "$platform" = "iPhoneSimulator" ]; then
+        is_ios=true
+    fi
 
-    # Copy dylib as the framework binary
-    cp "$dylib_path" "${framework_path}/Versions/A/${binary_name}"
+    # Create framework structure based on platform
+    if [ "$is_ios" = true ]; then
+        # iOS uses shallow bundle structure
+        mkdir -p "${framework_path}/Headers"
+
+        # Copy dylib as the framework binary (binary name = framework name)
+        cp "$dylib_path" "${framework_path}/${binary_name}"
+    else
+        # macOS uses deep bundle structure with Versions
+        mkdir -p "${framework_path}/Versions/A/Headers"
+        mkdir -p "${framework_path}/Versions/A/Resources"
+
+        # Copy dylib as the framework binary
+        cp "$dylib_path" "${framework_path}/Versions/A/${binary_name}"
+    fi
 
     # Copy headers - they're in the include directory at the extraction root
     # The dylib is typically in lib/libpdfium.dylib, headers are in include/
@@ -173,19 +188,24 @@ create_framework() {
     local extract_root=$(dirname "$(dirname "$dylib_path")")
     local header_dir="${extract_root}/include"
     if [ -d "$header_dir" ]; then
-        cp -R "${header_dir}"/* "${framework_path}/Versions/A/Headers/"
-
-        # Remove unwanted files (backup files, temp files, etc.)
-        find "${framework_path}/Versions/A/Headers" -type f \( -name "*.orig" -o -name "*.bak" -o -name "*~" -o -name ".DS_Store" \) -delete
+        if [ "$is_ios" = true ]; then
+            cp -R "${header_dir}"/* "${framework_path}/Headers/"
+            find "${framework_path}/Headers" -type f \( -name "*.orig" -o -name "*.bak" -o -name "*~" -o -name ".DS_Store" \) -delete
+        else
+            cp -R "${header_dir}"/* "${framework_path}/Versions/A/Headers/"
+            find "${framework_path}/Versions/A/Headers" -type f \( -name "*.orig" -o -name "*.bak" -o -name "*~" -o -name ".DS_Store" \) -delete
+        fi
     else
         log_warning "Headers not found at ${header_dir}"
     fi
 
-    # Create symlinks
-    cd "${framework_path}/Versions" && ln -sf "A" "Current" && cd - > /dev/null
-    cd "${framework_path}" && ln -sf "Versions/Current/${binary_name}" "${binary_name}" && cd - > /dev/null
-    cd "${framework_path}" && ln -sf "Versions/Current/Headers" "Headers" && cd - > /dev/null
-    cd "${framework_path}" && ln -sf "Versions/Current/Resources" "Resources" && cd - > /dev/null
+    # Create symlinks for macOS frameworks only
+    if [ "$is_ios" = false ]; then
+        cd "${framework_path}/Versions" && ln -sf "A" "Current" && cd - > /dev/null
+        cd "${framework_path}" && ln -sf "Versions/Current/${binary_name}" "${binary_name}" && cd - > /dev/null
+        cd "${framework_path}" && ln -sf "Versions/Current/Headers" "Headers" && cd - > /dev/null
+        cd "${framework_path}" && ln -sf "Versions/Current/Resources" "Resources" && cd - > /dev/null
+    fi
 
     # Create Info.plist with proper platform variant support
     local supported_platforms="<string>${platform}</string>"
@@ -193,8 +213,16 @@ create_framework() {
         supported_platforms="<string>MacOSX</string>"
     fi
 
+    # Determine Info.plist location based on bundle type
+    local plist_path
+    if [ "$is_ios" = true ]; then
+        plist_path="${framework_path}/Info.plist"
+    else
+        plist_path="${framework_path}/Versions/A/Resources/Info.plist"
+    fi
+
     # Create Info.plist
-    cat > "${framework_path}/Versions/A/Resources/Info.plist" <<EOF
+    cat > "$plist_path" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -332,9 +360,12 @@ process_architecture() {
     local arch=$2
     local tgz_file=$3
     local variant=$4
-    local framework_name="PDFium-${platform}-${arch}${variant:+-${variant}}.framework"
-    local extract_dir="${WORK_DIR}/extracted/${platform}-${arch}${variant:+-${variant}}"
-    local framework_dir="${WORK_DIR}/frameworks/${framework_name}"
+    # Use a unique internal name for the framework directory during build
+    # but the framework itself will always be named "PDFium.framework"
+    local internal_name="PDFium-${platform}-${arch}${variant:+-${variant}}"
+    local framework_name="PDFium.framework"
+    local extract_dir="${WORK_DIR}/extracted/${internal_name}"
+    local framework_dir="${WORK_DIR}/frameworks/${internal_name}/${framework_name}"
 
     download_and_extract "$tgz_file" "$extract_dir"
 
@@ -422,60 +453,66 @@ main() {
     log_info "Creating fat frameworks for multi-architecture platforms..."
 
     # Define which frameworks to combine into fat binaries
-    # Format: "final_framework_name|framework1|framework2|..."
+    # Format: "output_dir|internal_name1|internal_name2"
     FAT_CONFIGS=(
-        "PDFium-iPhoneSimulator.framework|PDFium-iPhoneSimulator-arm64.framework|PDFium-iPhoneSimulator-x64.framework"
-        "PDFium-MacOSX-catalyst.framework|PDFium-MacOSX-arm64-catalyst.framework|PDFium-MacOSX-x64-catalyst.framework"
-        "PDFium-MacOSX.framework|PDFium-MacOSX-arm64.framework|PDFium-MacOSX-x64.framework"
+        "iPhoneSimulator|PDFium-iPhoneSimulator-arm64|PDFium-iPhoneSimulator-x64"
+        "MacOSX-catalyst|PDFium-MacOSX-arm64-catalyst|PDFium-MacOSX-x64-catalyst"
+        "MacOSX|PDFium-MacOSX-arm64|PDFium-MacOSX-x64"
     )
 
     framework_paths=()
 
     # Create fat frameworks
     for fat_config in "${FAT_CONFIGS[@]}"; do
-        IFS='|' read -r fat_name framework1 framework2 <<< "$fat_config"
+        IFS='|' read -r output_dir internal1 internal2 <<< "$fat_config"
 
-        framework1_path="${WORK_DIR}/frameworks/${framework1}"
-        framework2_path="${WORK_DIR}/frameworks/${framework2}"
-        fat_path="${WORK_DIR}/frameworks/${fat_name}"
+        framework1_path="${WORK_DIR}/frameworks/${internal1}/PDFium.framework"
+        framework2_path="${WORK_DIR}/frameworks/${internal2}/PDFium.framework"
+        fat_dir="${WORK_DIR}/frameworks/${output_dir}"
+        fat_path="${fat_dir}/PDFium.framework"
 
         if [ ! -d "$framework1_path" ] || [ ! -d "$framework2_path" ]; then
-            log_error "Missing frameworks for $fat_name"
+            log_error "Missing frameworks for ${output_dir}"
             continue
         fi
 
-        log_info "Creating fat framework: ${fat_name}"
+        log_info "Creating fat framework: ${output_dir}/PDFium.framework"
+
+        # Create output directory
+        mkdir -p "$fat_dir"
 
         # Copy the first framework as the base
         cp -R "$framework1_path" "$fat_path"
 
-        # Get binary names
-        binary1=$(basename "$framework1" .framework)
-        binary2=$(basename "$framework2" .framework)
-        fat_binary=$(basename "$fat_name" .framework)
+        # Binary name is always "PDFium" (matching the framework name)
+        local binary_name="PDFium"
+
+        # Determine if this is iOS (shallow) or macOS (deep) bundle
+        local is_ios=false
+        if [[ "$output_dir" == *"iPhone"* ]]; then
+            is_ios=true
+        fi
 
         # Use lipo to combine the binaries
-        lipo -create \
-            "${framework1_path}/Versions/A/${binary1}" \
-            "${framework2_path}/Versions/A/${binary2}" \
-            -output "${fat_path}/Versions/A/${fat_binary}"
-
-        # Remove the old binary from the copied framework
-        rm -f "${fat_path}/Versions/A/${binary1}"
-
-        # Update the symlink to point to the new binary name
-        rm -f "${fat_path}/${binary1}"
-        rm -f "${fat_path}/${fat_binary}"
-        cd "${fat_path}" && ln -sf "Versions/Current/${fat_binary}" "${fat_binary}" && cd - > /dev/null
-
-        # Update Info.plist with new bundle executable name
-        /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ${fat_binary}" "${fat_path}/Resources/Info.plist" 2>/dev/null || true
+        if [ "$is_ios" = true ]; then
+            # iOS shallow bundle - binary is at root
+            lipo -create \
+                "${framework1_path}/${binary_name}" \
+                "${framework2_path}/${binary_name}" \
+                -output "${fat_path}/${binary_name}"
+        else
+            # macOS deep bundle - binary is in Versions/A
+            lipo -create \
+                "${framework1_path}/Versions/A/${binary_name}" \
+                "${framework2_path}/Versions/A/${binary_name}" \
+                -output "${fat_path}/Versions/A/${binary_name}"
+        fi
 
         framework_paths+=("$fat_path")
     done
 
     # Add single-architecture framework (iOS device)
-    framework_paths+=("${WORK_DIR}/frameworks/PDFium-iPhoneOS-arm64.framework")
+    framework_paths+=("${WORK_DIR}/frameworks/PDFium-iPhoneOS-arm64/PDFium.framework")
 
     # Create xcframework
     log_info "Creating XCFramework..."
