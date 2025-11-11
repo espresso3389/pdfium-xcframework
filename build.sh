@@ -152,6 +152,7 @@ create_framework() {
     local platform=$3
     local arch=$4
     local variant=$5
+    local extract_root=$6
 
     log_info "Creating framework for ${platform}-${arch}${variant:+-${variant}}..."
 
@@ -201,7 +202,6 @@ create_framework() {
     # Copy headers - they're in the include directory at the extraction root
     # The dylib is typically in lib/libpdfium.dylib, headers are in include/
     # Note: Headers must be in each framework (can't be at XCFramework level for frameworks)
-    local extract_root=$(dirname "$(dirname "$dylib_path")")
     local header_dir="${extract_root}/include"
     if [ -d "$header_dir" ]; then
         if [ "$is_ios" = true ]; then
@@ -213,6 +213,25 @@ create_framework() {
         fi
     else
         log_warning "Headers not found at ${header_dir}"
+    fi
+
+    # Look for and copy dSYM if available
+    local dsym_dir="${extract_root}/lib/libpdfium.dylib.dSYM"
+    if [ -d "$dsym_dir" ]; then
+        log_info "Found dSYM, copying to framework..."
+        local framework_dsym_path="${framework_path}.dSYM"
+        cp -R "$dsym_dir" "$framework_dsym_path"
+
+        # Update the dSYM binary reference to match framework name
+        if [ -d "${framework_dsym_path}/Contents/Resources/DWARF" ]; then
+            local old_binary_name=$(ls "${framework_dsym_path}/Contents/Resources/DWARF/" | head -n 1)
+            if [ -n "$old_binary_name" ] && [ "$old_binary_name" != "$binary_name" ]; then
+                mv "${framework_dsym_path}/Contents/Resources/DWARF/${old_binary_name}" \
+                   "${framework_dsym_path}/Contents/Resources/DWARF/${binary_name}"
+            fi
+        fi
+    else
+        log_warning "No dSYM found at ${dsym_dir} - debug symbols will not be available"
     fi
 
     # Create symlinks for macOS frameworks only
@@ -237,6 +256,22 @@ create_framework() {
         plist_path="${framework_path}/Versions/A/Resources/Info.plist"
     fi
 
+    # Convert VERSION to 3-part format for CFBundleShortVersionString
+    # Apple requires max 3 non-negative integers (e.g., 144.0.7506.0 -> 144.0.7506)
+    local short_version=$(echo "${VERSION}" | awk -F. '{print $1"."$2"."$3}')
+
+    # Determine MinimumOSVersion based on platform
+    local min_os_version="11.0"
+    if [ "$platform" = "iPhoneOS" ] || [ "$platform" = "iPhoneSimulator" ]; then
+        min_os_version="11.0"
+    elif [ "$platform" = "MacOSX" ]; then
+        if [ "$variant" = "catalyst" ]; then
+            min_os_version="11.0"  # Mac Catalyst minimum
+        else
+            min_os_version="10.13"  # macOS minimum
+        fi
+    fi
+
     # Create Info.plist
     cat > "$plist_path" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -254,13 +289,15 @@ create_framework() {
     <key>CFBundlePackageType</key>
     <string>FMWK</string>
     <key>CFBundleShortVersionString</key>
-    <string>${VERSION}</string>
+    <string>${short_version}</string>
     <key>CFBundleVersion</key>
     <string>${VERSION}</string>
     <key>CFBundleSupportedPlatforms</key>
     <array>
         ${supported_platforms}
     </array>
+    <key>MinimumOSVersion</key>
+    <string>${min_os_version}</string>
 </dict>
 </plist>
 EOF
@@ -396,7 +433,7 @@ process_architecture() {
         return 1
     fi
 
-    create_framework "$dylib" "$framework_dir" "$platform" "$arch" "$variant"
+    create_framework "$dylib" "$framework_dir" "$platform" "$arch" "$variant" "$extract_dir"
     echo "$framework_dir"
 }
 
@@ -552,15 +589,22 @@ main() {
 
     for framework in "${framework_paths[@]}"; do
         xcodebuild_args+=(-framework "$framework")
+
+        # Check if dSYM exists for this framework
+        local dsym_path="${framework}.dSYM"
+        if [ -d "$dsym_path" ]; then
+            log_info "Including dSYM for $(basename "$framework")"
+            xcodebuild_args+=(-debug-symbols "$dsym_path")
+        fi
     done
 
     xcodebuild_args+=(-output "${OUTPUT_DIR}/${XCFRAMEWORK_NAME}")
-    
+
     # Remove existing xcframework if it exists
     if [ -d "${OUTPUT_DIR}/${XCFRAMEWORK_NAME}" ]; then
         rm -rf "${OUTPUT_DIR}/${XCFRAMEWORK_NAME}"
     fi
-    
+
     xcodebuild "${xcodebuild_args[@]}"
 
     log_info "✅ XCFramework created successfully at ${OUTPUT_DIR}/${XCFRAMEWORK_NAME}"
