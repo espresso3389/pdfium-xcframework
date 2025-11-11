@@ -192,3 +192,13 @@ When asked to create a release:
 6. Report success with release details including verification status
 
 The entire process should be handled automatically without user intervention.
+
+## Important Commit Message Guidelines
+
+**NEVER use "Fixes #xx" in commit messages until the fix has been fully verified:**
+- Do NOT write "Fixes #1" until you have downloaded the release zip, extracted it, and verified all binary minos values and Info.plist values are correct
+- Use "Related to #1" or "Addresses #1" during development
+- Only use "Fixes #1" after complete verification of the built artifacts
+- The user will test the fix in their actual App Store submission workflow before the issue can be truly closed
+
+This prevents premature auto-closing of GitHub issues before fixes are confirmed to work.
