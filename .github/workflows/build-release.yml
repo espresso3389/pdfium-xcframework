@@ -177,32 +177,15 @@ jobs:
         id: set_tag
         run: |
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "tag_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            # For tag-based builds, use the tag as-is but append BUILD_ID for uniqueness
+            echo "tag_name=${{ github.ref_name }}-${{ env.BUILD_ID }}" >> $GITHUB_OUTPUT
           else
-            echo "tag_name=v${{ env.VERSION }}" >> $GITHUB_OUTPUT
+            # For workflow_dispatch, create tag with version and BUILD_ID
+            echo "tag_name=v${{ env.VERSION }}-${{ env.BUILD_ID }}" >> $GITHUB_OUTPUT
           fi
-
-      - name: Check if release exists
-        id: check_release
-        run: |
-          TAG_NAME="${{ steps.set_tag.outputs.tag_name }}"
-
-          # Check if release exists using GitHub API
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "⚠️  Release $TAG_NAME already exists. Skipping release creation."
-            echo "To create a new build, either:"
-            echo "  1. Delete the existing release and tag"
-            echo "  2. Wait for a new PDFium upstream version"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "✅ Release $TAG_NAME does not exist. Proceeding with creation."
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
-        if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && steps.check_release.outputs.exists == 'false'
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.set_tag.outputs.tag_name }}
@@ -218,30 +201,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Release Skipped
-        if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && steps.check_release.outputs.exists == 'true'
-        run: |
-          echo "❌ Release creation was skipped because release ${{ steps.set_tag.outputs.tag_name }} already exists."
-          echo ""
-          echo "The build artifacts are still available in this workflow run."
-          echo "If you want to create a new release, you must:"
-          echo "  1. Delete the existing release: gh release delete ${{ steps.set_tag.outputs.tag_name }}"
-          echo "  2. Delete the existing tag: git push --delete origin ${{ steps.set_tag.outputs.tag_name }}"
-          echo "  3. Re-run this workflow"
-          exit 1
-
       - name: Build Summary
-        if: github.event_name == 'workflow_dispatch'
         run: |
           echo "✅ Build completed successfully!"
           echo "📦 Built version: ${{ env.VERSION }}"
-          echo "📦 Release tag: ${{ env.RELEASE_TAG }}"
+          echo "📦 Release tag: ${{ steps.set_tag.outputs.tag_name }}"
           echo "📦 Build ID: ${{ env.BUILD_ID }}"
           echo ""
-          echo "XCFramework and package files are available as workflow artifacts."
-          echo ""
-          echo "To create a GitHub release:"
-          echo "  git tag v${{ env.VERSION }}"
-          echo "  git push origin v${{ env.VERSION }}"
-          echo ""
-          echo "The tag push will automatically trigger a release build."
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "XCFramework and package files are available as workflow artifacts."
+            echo ""
+            echo "✅ GitHub release has been created with tag: ${{ steps.set_tag.outputs.tag_name }}"
+            echo "   View at: https://github.com/${{ github.repository }}/releases/tag/${{ steps.set_tag.outputs.tag_name }}"
+          else
+            echo "✅ GitHub release has been created for tag: ${{ github.ref_name }}"
+            echo "   View at: https://github.com/${{ github.repository }}/releases/tag/${{ steps.set_tag.outputs.tag_name }}"
+          fi
