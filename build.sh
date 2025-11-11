@@ -564,9 +564,14 @@ main() {
             fi
 
             # Fix minos version in the binary (upstream may have incorrect version like 26.0)
-            # iOS/Catalyst minimum should be 13.0 (platform 2)
-            log_info "Setting binary minimum iOS version to 13.0 for ${output_dir}"
-            vtool -set-build-version 2 13.0 16.0 -replace -output "${fat_path}/${binary_name}" "${fat_path}/${binary_name}"
+            # iOS Simulator uses platform 7, iOS Device uses platform 2
+            if [[ "$output_dir" == *"Simulator"* ]]; then
+                log_info "Setting binary minimum iOS version to 13.0 for iOS Simulator (${output_dir})"
+                vtool -set-build-version 7 13.0 16.0 -replace -output "${fat_path}/${binary_name}" "${fat_path}/${binary_name}"
+            else
+                log_info "Setting binary minimum iOS version to 13.0 for iOS Device (${output_dir})"
+                vtool -set-build-version 2 13.0 16.0 -replace -output "${fat_path}/${binary_name}" "${fat_path}/${binary_name}"
+            fi
         else
             # macOS deep bundle - binary is in Versions/A
             lipo -create \
