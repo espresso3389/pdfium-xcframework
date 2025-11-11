@@ -641,7 +641,7 @@ main() {
     # Save version information for CI/CD workflows (before cleanup)
     cat > "${OUTPUT_DIR}/.version_info" <<EOF
 VERSION=${VERSION}
-RELEASE_TAG=${RELEASE_TAG}
+UPSTREAM_RELEASE_TAG=${RELEASE_TAG}
 BUILD_ID=${BUILD_ID}
 ZIP_NAME=${ZIP_NAME}
 EOF

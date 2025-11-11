@@ -56,15 +56,15 @@ jobs:
             ./build.sh "${{ github.event.inputs.chromium_version }}"
           fi
 
-          # Extract VERSION and RELEASE_TAG from build output for later steps
+          # Extract VERSION and upstream release info from build output for later steps
           if [ -f "output/.version_info" ]; then
             source output/.version_info
             echo "VERSION=${VERSION}" >> $GITHUB_ENV
-            echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
+            echo "UPSTREAM_RELEASE_TAG=${UPSTREAM_RELEASE_TAG}" >> $GITHUB_ENV
             echo "BUILD_ID=${BUILD_ID}" >> $GITHUB_ENV
             echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
             echo "Built version: ${VERSION}"
-            echo "Release tag: ${RELEASE_TAG}"
+            echo "Upstream release tag: ${UPSTREAM_RELEASE_TAG}"
             echo "Build ID: ${BUILD_ID}"
           else
             echo "Error: Version info file not found"
@@ -126,7 +126,7 @@ jobs:
 
           This XCFramework is built from pre-compiled PDFium binaries provided by [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries).
 
-          - **Upstream Release**: [${{ env.RELEASE_TAG }}](https://github.com/bblanchon/pdfium-binaries/releases/tag/${{ env.RELEASE_TAG }})
+          - **Upstream Release**: [${{ env.UPSTREAM_RELEASE_TAG }}](https://github.com/bblanchon/pdfium-binaries/releases/tag/${{ env.UPSTREAM_RELEASE_TAG }})
           - **PDFium Source**: [googlesource.com/pdfium](https://pdfium.googlesource.com/pdfium/)
           - **PDFium Documentation**: [pdfium.googlesource.com/pdfium/+/refs/heads/main/README.md](https://pdfium.googlesource.com/pdfium/+/refs/heads/main/README.md)
 
