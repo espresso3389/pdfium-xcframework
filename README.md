@@ -6,10 +6,10 @@ Pre-built PDFium XCFramework for iOS, macOS, and Mac Catalyst.
 
 - **Universal Binary**: Supports all architectures (arm64, x86_64)
 - **Multiple Platforms**:
-  - iOS Device (arm64)
-  - iOS Simulator (arm64, x86_64)
-  - macOS (arm64, x86_64)
-  - Mac Catalyst (arm64, x86_64)
+  - iOS Device (arm64) - Minimum iOS 13.0
+  - iOS Simulator (arm64, x86_64) - Minimum iOS 13.0
+  - macOS (arm64, x86_64) - Minimum macOS 10.15
+  - Mac Catalyst (arm64, x86_64) - Minimum iOS 13.0
 - **Easy Integration**: Works with Swift Package Manager, CocoaPods, or manual installation
 - **Automated Builds**: GitHub Actions workflow for reproducible builds
 
