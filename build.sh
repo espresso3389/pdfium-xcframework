@@ -261,14 +261,15 @@ create_framework() {
     local short_version=$(echo "${VERSION}" | awk -F. '{print $1"."$2"."$3}')
 
     # Determine MinimumOSVersion based on platform
-    local min_os_version="11.0"
+    # These values match the deployment targets in Package.swift and PDFium.podspec
+    local min_os_version="13.0"
     if [ "$platform" = "iPhoneOS" ] || [ "$platform" = "iPhoneSimulator" ]; then
-        min_os_version="11.0"
+        min_os_version="13.0"  # iOS minimum
     elif [ "$platform" = "MacOSX" ]; then
         if [ "$variant" = "catalyst" ]; then
-            min_os_version="11.0"  # Mac Catalyst minimum
+            min_os_version="13.0"  # Mac Catalyst minimum
         else
-            min_os_version="10.13"  # macOS minimum
+            min_os_version="10.15"  # macOS minimum
         fi
     fi
 
