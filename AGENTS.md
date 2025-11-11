@@ -46,15 +46,45 @@ gh release view <RELEASE_TAG>
 
 ### 4. Validate Release Assets
 
+#### 4.1 Verify Package.swift URLs
+
 Download and verify Package.swift contains correct URLs:
 ```bash
-gh release download <RELEASE_TAG> -p "Package.swift" -O /tmp/Package.swift
+gh release download <RELEASE_TAG> -p "Package.swift" -O /tmp/Package.swift --clobber
 cat /tmp/Package.swift
 ```
 
 Verify the URL format includes BUILD_ID:
 - Format: `https://github.com/espresso3389/pdfium-xcframework/releases/download/v{VERSION}-{BUILD_ID}/PDFium-chromium-{VERSION}-{BUILD_ID}.xcframework.zip`
 - Example: `https://github.com/espresso3389/pdfium-xcframework/releases/download/v144.0.7520.0-20251111-173323/PDFium-chromium-7520-20251111-173323.xcframework.zip`
+
+#### 4.2 Verify XCFramework Zip Consistency
+
+Download and extract the XCFramework zip to verify its contents:
+```bash
+# Download the XCFramework zip
+gh release download <RELEASE_TAG> -p "PDFium-chromium-*.xcframework.zip" -D /tmp --clobber
+
+# Extract and verify structure
+cd /tmp
+rm -rf PDFium.xcframework
+unzip -q PDFium-chromium-*.xcframework.zip
+
+# Verify iOS Info.plist (MinimumOSVersion and CFBundleShortVersionString)
+plutil -p PDFium.xcframework/ios-arm64/PDFium.framework/Info.plist | grep -E "(MinimumOSVersion|CFBundleShortVersionString)"
+
+# Verify macOS Info.plist
+plutil -p PDFium.xcframework/macos-arm64_x86_64/PDFium.framework/Versions/A/Resources/Info.plist | grep -E "(MinimumOSVersion|CFBundleShortVersionString)"
+
+# Verify Mac Catalyst Info.plist
+plutil -p PDFium.xcframework/ios-arm64_x86_64-maccatalyst/PDFium.framework/Versions/A/Resources/Info.plist | grep -E "(MinimumOSVersion|CFBundleShortVersionString)"
+```
+
+Expected values:
+- **iOS MinimumOSVersion**: `13.0`
+- **macOS MinimumOSVersion**: `10.15`
+- **Mac Catalyst MinimumOSVersion**: `13.0`
+- **CFBundleShortVersionString**: 3-part format (e.g., `144.0.7520`)
 
 ### 5. Report Results
 
@@ -92,9 +122,10 @@ Each release includes:
 
 ### Fixed Issues (as of 2025-11-12)
 1. ✅ **App Store Validation Errors Fixed**:
-   - Added `MinimumOSVersion` to Info.plist (iOS: 11.0, macOS: 10.13, Catalyst: 11.0)
+   - Added `MinimumOSVersion` to Info.plist (iOS: 13.0, macOS: 10.15, Catalyst: 13.0)
    - Fixed `CFBundleShortVersionString` to use 3-part version format (144.0.7520 instead of 144.0.7520.0)
    - Added dSYM support (if available from upstream)
+   - All deployment targets match across Info.plist, Package.swift, and PDFium.podspec
 
 2. ✅ **Unique Release Tags**:
    - Each build creates a unique release with BUILD_ID timestamp
@@ -144,6 +175,7 @@ When asked to create a release:
 2. Monitor execution until completion
 3. Verify release was created with correct tag format
 4. Check Package.swift and PDFium.podspec URLs
-5. Report success with release details
+5. **Verify XCFramework zip consistency** (download, extract, check Info.plist values)
+6. Report success with release details including verification status
 
 The entire process should be handled automatically without user intervention.
