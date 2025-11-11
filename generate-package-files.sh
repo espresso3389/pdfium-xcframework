@@ -72,8 +72,8 @@ import PackageDescription
 let package = Package(
     name: "PDFium",
     platforms: [
-        .iOS(.v13),
-        .macOS(.v10_15),
+        .iOS(.v11),
+        .macOS(.v10_13),
         .macCatalyst(.v13)
     ],
     products: [
@@ -114,8 +114,8 @@ Pod::Spec.new do |s|
     :sha256 => '${CHECKSUM}'
   }
 
-  s.ios.deployment_target = '13.0'
-  s.osx.deployment_target = '10.15'
+  s.ios.deployment_target = '11.0'
+  s.osx.deployment_target = '10.13'
 
   s.vendored_frameworks = 'PDFium.xcframework'
   s.requires_arc = true
