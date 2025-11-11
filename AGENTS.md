@@ -168,6 +168,19 @@ This should not happen with the BUILD_ID system, but if it does:
 - **Package Generator**: `generate-package-files.sh`
 - **GitHub Actions Workflow**: `.github/workflows/build-release.yml`
 
+## Technical Reference
+
+### Mach-O Platform Identifiers
+
+The build script uses `vtool -set-build-version` to fix incorrect minimum OS versions in upstream binaries. Platform numbers used:
+
+- **Platform 1**: PLATFORM_MACOS - macOS
+- **Platform 2**: PLATFORM_IOS - iOS (device)
+- **Platform 6**: PLATFORM_MACCATALYST - Mac Catalyst
+- **Platform 7**: PLATFORM_IOSSIMULATOR - iOS Simulator
+
+These values are defined in Apple's `mach-o/loader.h` header file and are part of the LC_BUILD_VERSION load command in Mach-O binaries.
+
 ## Summary for Agents
 
 When asked to create a release:
