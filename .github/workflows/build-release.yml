@@ -71,9 +71,21 @@ jobs:
             exit 1
           fi
 
+      - name: Set release tag
+        id: set_tag
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # For tag-based builds, use the tag as-is but append BUILD_ID for uniqueness
+            echo "tag_name=${{ github.ref_name }}-${{ env.BUILD_ID }}" >> $GITHUB_OUTPUT
+          else
+            # For workflow_dispatch, create tag with version and BUILD_ID
+            echo "tag_name=v${{ env.VERSION }}-${{ env.BUILD_ID }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create package files
         run: |
           export VERSION="${{ env.VERSION }}"
+          export RELEASE_TAG="${{ steps.set_tag.outputs.tag_name }}"
           export GITHUB_REPO="${{ github.repository }}"
           chmod +x generate-package-files.sh
           ./generate-package-files.sh
@@ -147,7 +159,7 @@ jobs:
           Or reference it directly:
 
           ```ruby
-          pod 'PDFium', :podspec => 'https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/PDFium.podspec'
+          pod 'PDFium', :podspec => 'https://github.com/${{ github.repository }}/releases/download/${{ steps.set_tag.outputs.tag_name }}/PDFium.podspec'
           ```
 
           #### Manual Installation
@@ -172,17 +184,6 @@ jobs:
           EOF
           echo "$CHECKSUM" >> release_body.md
           echo '```' >> release_body.md
-
-      - name: Set release tag
-        id: set_tag
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            # For tag-based builds, use the tag as-is but append BUILD_ID for uniqueness
-            echo "tag_name=${{ github.ref_name }}-${{ env.BUILD_ID }}" >> $GITHUB_OUTPUT
-          else
-            # For workflow_dispatch, create tag with version and BUILD_ID
-            echo "tag_name=v${{ env.VERSION }}-${{ env.BUILD_ID }}" >> $GITHUB_OUTPUT
-          fi
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'

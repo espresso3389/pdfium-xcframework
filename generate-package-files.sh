@@ -6,6 +6,7 @@ set -e
 
 # Configuration
 VERSION="${VERSION:-144.0.7506.0}"
+RELEASE_TAG="${RELEASE_TAG:-v${VERSION}}"  # Full release tag including BUILD_ID
 GITHUB_REPO="${GITHUB_REPO:-OWNER/REPO}"
 OUTPUT_DIR="${OUTPUT_DIR:-./output}"
 XCFRAMEWORK_NAME="PDFium.xcframework"
@@ -57,8 +58,9 @@ if [ "$GITHUB_REPO" = "OWNER/REPO" ]; then
     log_warning "Set it with: export GITHUB_REPO=username/repository"
 fi
 
-RELEASE_URL="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}/${ZIP_NAME}"
+RELEASE_URL="https://github.com/${GITHUB_REPO}/releases/download/${RELEASE_TAG}/${ZIP_NAME}"
 
+log_info "Release tag: ${RELEASE_TAG}"
 log_info "Release URL: ${RELEASE_URL}"
 
 # Generate Package.swift
@@ -129,15 +131,15 @@ log_info "Package files generated successfully!"
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 log_info ""
 log_info "Next steps:"
-log_info "1. Create a GitHub release with tag: v${VERSION}"
+log_info "1. Create a GitHub release with tag: ${RELEASE_TAG}"
 log_info "2. Upload ${ZIP_FILE} to the release"
 log_info "3. Commit and push the generated files:"
 log_info "   git add Package.swift PDFium.podspec"
-log_info "   git commit -m 'Update Package.swift and podspec for v${VERSION}'"
+log_info "   git commit -m 'Update Package.swift and podspec for ${RELEASE_TAG}'"
 log_info "   git push"
 log_info ""
 log_info "Or if you've already created the release:"
 log_info "   git add Package.swift PDFium.podspec"
-log_info "   git commit -m 'Update Package.swift and podspec for v${VERSION}'"
+log_info "   git commit -m 'Update Package.swift and podspec for ${RELEASE_TAG}'"
 log_info "   git push"
 log_info ""
