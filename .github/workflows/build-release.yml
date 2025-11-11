@@ -182,8 +182,27 @@ jobs:
             echo "tag_name=v${{ env.VERSION }}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Check if release exists
+        id: check_release
+        run: |
+          TAG_NAME="${{ steps.set_tag.outputs.tag_name }}"
+
+          # Check if release exists using GitHub API
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "⚠️  Release $TAG_NAME already exists. Skipping release creation."
+            echo "To create a new build, either:"
+            echo "  1. Delete the existing release and tag"
+            echo "  2. Wait for a new PDFium upstream version"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "✅ Release $TAG_NAME does not exist. Proceeding with creation."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && steps.check_release.outputs.exists == 'false'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.set_tag.outputs.tag_name }}
@@ -198,6 +217,18 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release Skipped
+        if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && steps.check_release.outputs.exists == 'true'
+        run: |
+          echo "❌ Release creation was skipped because release ${{ steps.set_tag.outputs.tag_name }} already exists."
+          echo ""
+          echo "The build artifacts are still available in this workflow run."
+          echo "If you want to create a new release, you must:"
+          echo "  1. Delete the existing release: gh release delete ${{ steps.set_tag.outputs.tag_name }}"
+          echo "  2. Delete the existing tag: git push --delete origin ${{ steps.set_tag.outputs.tag_name }}"
+          echo "  3. Re-run this workflow"
+          exit 1
 
       - name: Build Summary
         if: github.event_name == 'workflow_dispatch'
