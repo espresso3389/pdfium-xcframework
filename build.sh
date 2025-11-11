@@ -583,10 +583,10 @@ main() {
             fi
 
             # Fix minos version in the binary (upstream may have incorrect version)
-            # macOS minimum should be 10.15 (platform 1), Catalyst should be 13.0 (platform 2)
+            # macOS minimum should be 10.15 (platform 1), Catalyst should be 13.0 (platform 6 for macabi)
             if [[ "$output_dir" == *"catalyst"* ]]; then
                 log_info "Setting binary minimum iOS version to 13.0 for Mac Catalyst (${output_dir})"
-                vtool -set-build-version 2 13.0 16.0 -replace -output "${fat_path}/Versions/A/${binary_name}" "${fat_path}/Versions/A/${binary_name}"
+                vtool -set-build-version 6 13.0 16.0 -replace -output "${fat_path}/Versions/A/${binary_name}" "${fat_path}/Versions/A/${binary_name}"
             else
                 log_info "Setting binary minimum macOS version to 10.15 for ${output_dir}"
                 vtool -set-build-version 1 10.15 16.0 -replace -output "${fat_path}/Versions/A/${binary_name}" "${fat_path}/Versions/A/${binary_name}"
