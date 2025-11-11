@@ -182,6 +182,15 @@ create_framework() {
             log_warning "Full path doesn't fit, using short path @rpath/${binary_name}"
             install_name_tool -id "@rpath/${binary_name}" "${framework_path}/${binary_name}"
         fi
+
+        # Fix minos version in the binary (upstream may have incorrect version like 26.0)
+        # iOS minimum should be 13.0, Catalyst should be 13.0
+        local target_minos="13.0"
+        if [ "$variant" = "catalyst" ]; then
+            target_minos="13.0"
+        fi
+        log_info "Setting binary minimum iOS version to ${target_minos}"
+        vtool -set-build-version 2 "${target_minos}" 16.0 -replace -output "${framework_path}/${binary_name}" "${framework_path}/${binary_name}"
     else
         # macOS uses deep bundle structure with Versions
         mkdir -p "${framework_path}/Versions/A/Headers"
@@ -197,6 +206,12 @@ create_framework() {
             log_warning "Full path doesn't fit, using short path @rpath/${binary_name}"
             install_name_tool -id "@rpath/${binary_name}" "${framework_path}/Versions/A/${binary_name}"
         fi
+
+        # Fix minos version in the binary (upstream may have incorrect version)
+        # macOS minimum should be 10.15
+        local target_minos="10.15"
+        log_info "Setting binary minimum macOS version to ${target_minos}"
+        vtool -set-build-version 1 "${target_minos}" 16.0 -replace -output "${framework_path}/Versions/A/${binary_name}" "${framework_path}/Versions/A/${binary_name}"
     fi
 
     # Copy headers - they're in the include directory at the extraction root
